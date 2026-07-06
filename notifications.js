@@ -1,23 +1,10 @@
 // ════════════════════════════════════════════════════════
 //  notifications.js  —  Email + WhatsApp notifications
-//  Stack: Nodemailer (Gmail SMTP) + Meta WhatsApp API
+//  Stack: Brevo HTTP API + Meta WhatsApp API
 // ════════════════════════════════════════════════════════
 
-const nodemailer = require('nodemailer');
-
-// ── Gmail SMTP Transporter ───────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_USER,
-    pass: process.env.BREVO_PASSWORD,
-  },
-});
-
 // ════════════════════════════════════════════════════════
-//  EMAIL NOTIFICATION
+//  EMAIL NOTIFICATION (Brevo HTTP API — works on Render)
 // ════════════════════════════════════════════════════════
 async function sendBookingEmail(booking) {
   const {
@@ -68,12 +55,10 @@ async function sendBookingEmail(booking) {
     <div class="body">
       <p class="greeting">Dear ${guestName},</p>
       <p class="subtext">Your booking is confirmed! We look forward to welcoming you to The Lake House, Kodaikanal. Please find your booking details below.</p>
-
       <div class="ref-box">
         <div class="ref-label">Booking Reference</div>
         <div class="ref-number">${bookingRef}</div>
       </div>
-
       <table class="details-table">
         <tr><td>Room Type</td><td>${roomType}</td></tr>
         <tr><td>Check-in</td><td>${formatDate(checkIn)} · 12:00 PM</td></tr>
@@ -83,7 +68,6 @@ async function sendBookingEmail(booking) {
         <tr><td>Payment ID</td><td>${paymentId}</td></tr>
         <tr class="total-row"><td>Total Paid</td><td>₹${Number(totalAmount).toLocaleString('en-IN')}</td></tr>
       </table>
-
       <div class="info-box">
         <strong>📍 Address</strong><br>
         5/82 A2 Rifle Range Road, Naidupuram, Kodaikanal — 624101<br><br>
@@ -92,7 +76,6 @@ async function sendBookingEmail(booking) {
         Phone: ${process.env.HOTEL_PHONE}<br>
         Email: ${process.env.HOTEL_EMAIL}
       </div>
-
       <hr class="divider">
       <p style="font-size:13px;color:#7A7A72;line-height:1.7;">
         For any changes or queries, please contact us with your booking reference number.
@@ -108,12 +91,23 @@ async function sendBookingEmail(booking) {
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from:    `"The Lake House Kodaikanal" <${process.env.GMAIL_USER}>`,
-    to:      guestEmail,
-    subject: `Booking Confirmed — ${bookingRef} | The Lake House Kodaikanal`,
-    html:    htmlContent,
+  // ── Brevo HTTP API (no SMTP, works on Render free plan) ──
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+    },
+    body: JSON.stringify({
+      sender:  { name: 'The Lake House Kodaikanal', email: process.env.BREVO_SENDER_EMAIL },
+      to:      [{ email: guestEmail, name: guestName }],
+      subject: `Booking Confirmed — ${bookingRef} | The Lake House Kodaikanal`,
+      htmlContent: htmlContent,
+    }),
   });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Brevo API error');
 
   console.log(`[email] Confirmation sent to ${guestEmail}`);
 }
@@ -129,32 +123,27 @@ async function sendBookingWhatsApp(booking) {
 
   const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24));
 
-  // Format phone: remove leading 0, add country code
-  // e.g. 9876543210 → 919876543210
   const phone = guestPhone.replace(/\D/g, '').replace(/^0/, '');
   const formattedPhone = phone.startsWith('91') ? phone : `91${phone}`;
 
-  // Using a WhatsApp template message (required for business-initiated messages)
-  // You must create this template in Meta Business Manager first
-  // Template name: booking_confirmation
   const payload = {
     messaging_product: 'whatsapp',
     to: formattedPhone,
     type: 'template',
     template: {
-      name: 'booking_confirmation',   // your approved template name
+      name: 'booking_confirmation',
       language: { code: 'en' },
       components: [
         {
           type: 'body',
           parameters: [
-            { type: 'text', text: guestName },           // {{1}}
-            { type: 'text', text: bookingRef },           // {{2}}
-            { type: 'text', text: roomType },             // {{3}}
-            { type: 'text', text: formatDate(checkIn) },  // {{4}}
-            { type: 'text', text: formatDate(checkOut) }, // {{5}}
-            { type: 'text', text: `${nights}` },          // {{6}}
-            { type: 'text', text: `₹${Number(totalAmount).toLocaleString('en-IN')}` }, // {{7}}
+            { type: 'text', text: guestName },
+            { type: 'text', text: bookingRef },
+            { type: 'text', text: roomType },
+            { type: 'text', text: formatDate(checkIn) },
+            { type: 'text', text: formatDate(checkOut) },
+            { type: 'text', text: `${nights}` },
+            { type: 'text', text: `₹${Number(totalAmount).toLocaleString('en-IN')}` },
           ],
         },
       ],
