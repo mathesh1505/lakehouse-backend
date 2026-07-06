@@ -7,10 +7,12 @@ const nodemailer = require('nodemailer');
 
 // ── Gmail SMTP Transporter ───────────────────────────────
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,              // port 587 works on Render free plan
+  secure: false,          // true for 465, false for 587
   auth: {
-    user: process.env.GMAIL_USER,      // lakehouse@gmail.com
-    pass: process.env.GMAIL_APP_PASSWORD, // 16-digit app password (not your login password)
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
   },
 });
 
