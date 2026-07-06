@@ -7,12 +7,12 @@ const nodemailer = require('nodemailer');
 
 // ── Gmail SMTP Transporter ───────────────────────────────
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,              // port 587 works on Render free plan
-  secure: false,          // true for 465, false for 587
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  secure: false,
   auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
+    user: process.env.BREVO_USER,
+    pass: process.env.BREVO_PASSWORD,
   },
 });
 
