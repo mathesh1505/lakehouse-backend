@@ -138,26 +138,5 @@ app.post('/api/verify-payment', async (req, res) => {
   }
 });
 
-// Temporary test route — remove after testing
-app.get('/test-email', async (req, res) => {
-  try {
-    await notifyGuest({
-      guestName:   'Test Guest',
-      guestEmail:  'matheshofficial87@gmail.com',
-      guestPhone:  '8489747566',
-      bookingRef:  'LH-TEST-001',
-      roomType:    'Family Room with Balcony',
-      checkIn:     '2026-07-06',
-      checkOut:    '2026-07-07',
-      rooms:       1,
-      totalAmount: 2400,
-      paymentId:   'pay_test123',
-    });
-    res.json({ success: true, message: 'Email sent! Check inbox.' });
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
-
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Razorpay backend running on port ${PORT}`));
