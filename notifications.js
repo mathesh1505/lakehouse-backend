@@ -170,12 +170,111 @@ async function sendBookingWhatsApp(booking) {
 }
 
 // ════════════════════════════════════════════════════════
-//  SEND BOTH — call this after every confirmed booking
+//  ADMIN NOTIFICATION — sent to hotel owner on every booking
+// ════════════════════════════════════════════════════════
+async function sendAdminNotification(booking) {
+  const {
+    guestName, guestEmail, guestPhone, bookingRef,
+    roomType, checkIn, checkOut, rooms,
+    totalAmount, paymentId,
+  } = booking;
+
+  const nights = Math.round((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24));
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
+    .wrapper { max-width: 600px; margin: 30px auto; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; }
+    .header { background: #1A2A3A; padding: 24px 32px; }
+    .header h1 { color: #C9A84C; font-size: 20px; margin: 0; }
+    .header p { color: rgba(255,255,255,0.6); font-size: 12px; margin: 4px 0 0; }
+    .alert-banner { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 12px 20px; font-size: 15px; color: #2e7d32; font-weight: bold; }
+    .body { padding: 28px 32px; }
+    .section-title { font-size: 13px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 10px; }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 10px 0; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+    td:first-child { color: #666; width: 45%; }
+    td:last-child { color: #111; font-weight: 600; text-align: right; }
+    .total td { font-size: 16px; color: #1A2A3A; border-bottom: none; }
+    .payment-box { background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 14px 18px; margin-top: 20px; font-size: 13px; color: #555; }
+    .payment-box strong { color: #111; }
+    .footer { background: #f4f4f4; padding: 16px 32px; text-align: center; font-size: 12px; color: #999; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <h1>The Lake House — Admin Alert</h1>
+      <p>New booking received</p>
+    </div>
+    <div class="alert-banner">
+      🎉 New Booking — ${bookingRef}
+    </div>
+    <div class="body">
+
+      <div class="section-title">Guest Details</div>
+      <table>
+        <tr><td>Guest Name</td><td>${guestName}</td></tr>
+        <tr><td>Email</td><td>${guestEmail}</td></tr>
+        <tr><td>Phone</td><td>${guestPhone}</td></tr>
+      </table>
+
+      <div class="section-title">Booking Details</div>
+      <table>
+        <tr><td>Room Type</td><td>${roomType}</td></tr>
+        <tr><td>Check-in</td><td>${formatDate(checkIn)}</td></tr>
+        <tr><td>Check-out</td><td>${formatDate(checkOut)}</td></tr>
+        <tr><td>Duration</td><td>${nights} Night${nights > 1 ? 's' : ''}</td></tr>
+        <tr><td>Rooms</td><td>${rooms}</td></tr>
+        <tr class="total"><td>Total Amount</td><td>₹${Number(totalAmount).toLocaleString('en-IN')}</td></tr>
+      </table>
+
+      <div class="payment-box">
+        <strong>Payment ID:</strong> ${paymentId}<br>
+        <strong>Booking Ref:</strong> ${bookingRef}<br>
+        <strong>Booked On:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST
+      </div>
+
+    </div>
+    <div class="footer">
+      This is an automated admin alert from The Lake House booking system.
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+    },
+    body: JSON.stringify({
+      sender:      { name: 'Lake House Booking System', email: process.env.BREVO_SENDER_EMAIL },
+      to:          [{ email: process.env.ADMIN_EMAIL, name: 'Admin' }],
+      subject:     `🏨 New Booking — ${bookingRef} | ${guestName} | ₹${Number(totalAmount).toLocaleString('en-IN')}`,
+      htmlContent: htmlContent,
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Brevo API error');
+
+  console.log(`[admin-email] Alert sent to ${process.env.ADMIN_EMAIL}`);
+}
+
+// ════════════════════════════════════════════════════════
+//  SEND ALL — guest email + whatsapp + admin alert
 // ════════════════════════════════════════════════════════
 async function notifyGuest(booking) {
   await Promise.allSettled([
     sendBookingEmail(booking).catch(e => console.error('[email] failed:', e.message)),
     sendBookingWhatsApp(booking).catch(e => console.error('[whatsapp] failed:', e.message)),
+    sendAdminNotification(booking).catch(e => console.error('[admin-email] failed:', e.message)),
   ]);
 }
 
@@ -186,4 +285,4 @@ function formatDate(dateStr) {
   });
 }
 
-module.exports = { notifyGuest, sendBookingEmail, sendBookingWhatsApp };
+module.exports = { notifyGuest, sendBookingEmail, sendBookingWhatsApp, sendAdminNotification };
