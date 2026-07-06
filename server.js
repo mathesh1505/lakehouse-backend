@@ -4,6 +4,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const Razorpay = require('razorpay');
 const { createClient } = require('@supabase/supabase-js');
+const { notifyGuest } = require('./notifications');
 
 const app = express();
 app.use(express.json());
@@ -115,12 +116,46 @@ app.post('/api/verify-payment', async (req, res) => {
         return res.json({ verified: true, db_saved: false, error: error.message });
       }
       savedBooking = data;
+       // ── Send email + WhatsApp confirmation to guest ──
+      await notifyGuest({
+        guestName:   savedBooking.guest_name,
+        guestEmail:  savedBooking.email,
+        guestPhone:  savedBooking.mobile,
+        bookingRef:  'LH-' + savedBooking.id,
+        roomType:    savedBooking.room_type,
+        checkIn:     savedBooking.check_in,
+        checkOut:    savedBooking.check_out,
+        rooms:       1,
+        totalAmount: savedBooking.amount,
+        paymentId:   razorpay_payment_id,
+      });
     }
 
     res.json({ verified: true, db_saved: !!savedBooking, booking: savedBooking });
   } catch (err) {
     console.error('verify-payment error:', err);
     res.status(500).json({ verified: false, error: 'Verification failed' });
+  }
+});
+
+// Temporary test route — remove after testing
+app.get('/test-email', async (req, res) => {
+  try {
+    await notifyGuest({
+      guestName:   'Test Guest',
+      guestEmail:  'matheshofficial87@gmail.com',
+      guestPhone:  '8489747566',
+      bookingRef:  'LH-TEST-001',
+      roomType:    'Family Room with Balcony',
+      checkIn:     '2026-07-06',
+      checkOut:    '2026-07-07',
+      rooms:       1,
+      totalAmount: 2400,
+      paymentId:   'pay_test123',
+    });
+    res.json({ success: true, message: 'Email sent! Check inbox.' });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
   }
 });
 
