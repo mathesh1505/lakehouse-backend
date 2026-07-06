@@ -14,27 +14,15 @@ app.use(cors({
   origin: allowedOrigins.length ? allowedOrigins : true,
 }));
 
-// ── Razorpay instance — key_secret never leaves this file ──
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// ── Optional: server-side Supabase client using the SERVICE ROLE key.
-// This lets the backend write the final "paid" booking itself instead
-// of trusting the browser to do it after payment.
 const supabase = (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY)
   ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
   : null;
 
-/**
- * STEP 1: Create a Razorpay order.
- * Frontend calls this with the amount it calculated (room price x nights).
- * We trust nothing else from the frontend about the amount here in a real
- * production app — ideally you'd recompute the price server-side from
- * room_type + dates instead of accepting `amount` directly. Shown simply
- * below for clarity.
- */
 app.post('/api/create-order', async (req, res) => {
   try {
     const { amount, currency = 'INR', booking } = req.body;
@@ -44,7 +32,7 @@ app.post('/api/create-order', async (req, res) => {
     }
 
     const order = await razorpay.orders.create({
-      amount: Math.round(amount * 100), // Razorpay needs amount in paise
+      amount: Math.round(amount * 100),
       currency,
       receipt: 'LH-' + Date.now(),
       notes: {
@@ -59,7 +47,7 @@ app.post('/api/create-order', async (req, res) => {
       order_id: order.id,
       amount: order.amount,
       currency: order.currency,
-      key_id: process.env.RAZORPAY_KEY_ID, // public key, safe to send to frontend
+      key_id: process.env.RAZORPAY_KEY_ID,
     });
   } catch (err) {
     console.error('create-order error:', err);
@@ -67,18 +55,13 @@ app.post('/api/create-order', async (req, res) => {
   }
 });
 
-/**
- * STEP 2: Verify the payment signature Razorpay returns to the frontend
- * after checkout. This is the step that actually proves the payment is
- * genuine — never trust a "success" callback from the browser alone.
- */
 app.post('/api/verify-payment', async (req, res) => {
   try {
     const {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
-      booking, // optional: booking details to persist on successful payment
+      booking,
     } = req.body;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
@@ -96,7 +79,6 @@ app.post('/api/verify-payment', async (req, res) => {
       return res.status(400).json({ verified: false, error: 'Signature mismatch' });
     }
 
-    // Signature is valid — payment is genuine.
     let savedBooking = null;
     if (supabase && booking) {
       const { data, error } = await supabase
@@ -112,12 +94,14 @@ app.post('/api/verify-payment', async (req, res) => {
 
       if (error) {
         console.error('Supabase insert error:', error);
-        // Payment is still valid even if the DB write failed — surface both.
         return res.json({ verified: true, db_saved: false, error: error.message });
       }
       savedBooking = data;
-       // ── Send email + WhatsApp confirmation to guest ──
-      await notifyGuest({
+    }
+
+    // ── Send email in background (non-blocking) ──
+    if (savedBooking) {
+      notifyGuest({
         guestName:   savedBooking.guest_name,
         guestEmail:  savedBooking.email,
         guestPhone:  savedBooking.mobile,
@@ -128,10 +112,12 @@ app.post('/api/verify-payment', async (req, res) => {
         rooms:       1,
         totalAmount: savedBooking.amount,
         paymentId:   razorpay_payment_id,
-      });
+      }).catch(e => console.error('[notify] failed:', e.message));
     }
 
+    // Immediately respond to browser — don't wait for email
     res.json({ verified: true, db_saved: !!savedBooking, booking: savedBooking });
+
   } catch (err) {
     console.error('verify-payment error:', err);
     res.status(500).json({ verified: false, error: 'Verification failed' });
